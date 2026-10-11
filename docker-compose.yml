@@ -1,0 +1,18 @@
+services:
+  plc:
+    build:
+      context: .
+      dockerfile: Dockerfile.plc
+    ports:
+      - "5020:5020"
+  scada:
+    build:
+      context: .
+      dockerfile: Dockerfile.scada
+    environment:
+      PLC_HOST: plc
+      PLC_PORT: "5020"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - plc

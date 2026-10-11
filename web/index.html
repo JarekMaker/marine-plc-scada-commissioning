@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marine Auxiliary Commissioning Trainer</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="eyebrow">Training simulator — not a ship installation</p>
+      <h1>Marine Auxiliary Commissioning Trainer</h1>
+      <p class="sub">MV TRAINER · engine room auxiliaries · Modbus TCP port 5020</p>
+    </div>
+    <dl class="meters" id="meters">
+      <div>
+        <dt>Link</dt>
+        <dd id="link">WAITING</dd>
+      </div>
+      <div>
+        <dt>Availability</dt>
+        <dd id="availability">—</dd>
+      </div>
+      <div>
+        <dt>Downtime</dt>
+        <dd id="downtime">0.0 s</dd>
+      </div>
+      <div>
+        <dt>Heartbeat</dt>
+        <dd id="heartbeat">—</dd>
+      </div>
+    </dl>
+  </header>
+
+  <p id="message" class="message" role="status"></p>
+
+  <section class="panel mimic" aria-labelledby="mimic-title">
+    <div class="panel-head">
+      <h2 id="mimic-title">Engine room mimic</h2>
+      <p id="io-strip" class="io">Waiting for the PLC image.</p>
+    </div>
+
+    <div class="power-row">
+      <article class="power" id="main-power">
+        <span class="lamp" id="main-lamp"></span>
+        <div>
+          <h3>Main power</h3>
+          <p id="main-power-state">—</p>
+        </div>
+      </article>
+      <article class="power" id="emergency-power">
+        <span class="lamp" id="emergency-lamp"></span>
+        <div>
+          <h3>Emergency power</h3>
+          <p id="emergency-power-state">—</p>
+        </div>
+      </article>
+    </div>
+
+    <div class="plant-grid">
+      <article class="tank-card">
+        <div class="tank-shell" aria-hidden="true">
+          <span class="tank-mark" title="High level 85%"></span>
+          <span class="tank-fill" id="tank1-fill"></span>
+        </div>
+        <h3>Ballast tank 1</h3>
+        <p class="value" id="tank1-value">—</p>
+        <p class="hint">High alarm at 85%</p>
+      </article>
+      <article class="tank-card">
+        <div class="tank-shell" aria-hidden="true">
+          <span class="tank-mark"></span>
+          <span class="tank-fill" id="tank2-fill"></span>
+        </div>
+        <h3>Ballast tank 2</h3>
+        <p class="value" id="tank2-value">—</p>
+        <p class="hint">High alarm at 85%</p>
+      </article>
+      <article class="gauge">
+        <h3>Engine room</h3>
+        <p class="value" id="temp-value">—</p>
+        <p class="hint">High alarm at 70.0 °C</p>
+      </article>
+      <article class="gauge">
+        <h3>Cooling water</h3>
+        <p class="value" id="pressure-value">—</p>
+        <p class="hint">Low alarm at 2.0 bar</p>
+      </article>
+    </div>
+
+    <div class="pump-row">
+      <article class="pump" id="pump1-card">
+        <span class="lamp" id="pump1-lamp"></span>
+        <div>
+          <h3>Bilge pump 1</h3>
+          <p id="pump1-state">—</p>
+        </div>
+        <button type="button" id="pump1-cmd">Start</button>
+      </article>
+      <article class="pump" id="pump2-card">
+        <span class="lamp" id="pump2-lamp"></span>
+        <div>
+          <h3>Bilge pump 2</h3>
+          <p id="pump2-state">—</p>
+        </div>
+        <button type="button" id="pump2-cmd">Start</button>
+      </article>
+    </div>
+
+    <div class="fire-row" id="fire-row">
+      <article class="fire" id="fire1">
+        <span class="lamp"></span>
+        <h3>Fire zone 1</h3>
+        <p>—</p>
+      </article>
+      <article class="fire" id="fire2">
+        <span class="lamp"></span>
+        <h3>Fire zone 2</h3>
+        <p>—</p>
+      </article>
+      <article class="fire" id="fire3">
+        <span class="lamp"></span>
+        <h3>Fire zone 3</h3>
+        <p>—</p>
+      </article>
+    </div>
+  </section>
+
+  <div class="split">
+    <section class="panel" aria-labelledby="alarm-title">
+      <div class="panel-head">
+        <h2 id="alarm-title">Alarms</h2>
+        <div class="actions">
+          <button type="button" id="ack-btn">Acknowledge</button>
+          <button type="button" id="reset-btn">Reset</button>
+        </div>
+      </div>
+      <ul id="alarm-list" class="alarm-list">
+        <li class="empty">No active alarms</li>
+      </ul>
+      <form id="fault-form" class="fault-form">
+        <label for="fault">Inject a known fault</label>
+        <div class="fault-row">
+          <select id="fault"></select>
+          <button type="submit">Apply</button>
+        </div>
+        <p id="fault-chips" class="chips"></p>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="check-title">
+      <div class="panel-head">
+        <h2 id="check-title">Commissioning checklist</h2>
+        <button type="button" id="run-all">Run all</button>
+      </div>
+      <p class="hint lone">Each step returns the plant to normal, injects one condition, and records pass or fail.</p>
+      <ol id="steps" class="steps"></ol>
+    </section>
+  </div>
+
+  <footer>
+    Personal project for PLC/SCADA commissioning practice.
+    <a href="/docs">API docs</a>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
