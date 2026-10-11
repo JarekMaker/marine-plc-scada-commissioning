@@ -8,6 +8,8 @@ import asyncio
 import logging
 import os
 import time
+from collections import deque
+from datetime import datetime
 from typing import Any, Callable
 
 from pymodbus.client import AsyncModbusTcpClient
@@ -19,6 +21,7 @@ from common.map import (
     COIL_INJECT_FIRE_1,
     COIL_INJECT_MAIN_POWER_LOSS,
     COIL_INJECT_PUMP1_FAIL,
+    COIL_PUMP1_AUTO,
     COIL_PUMP1_START,
     COIL_PUMP2_START,
     COIL_RESET,
@@ -58,6 +61,11 @@ STEPS = [
         "id": "ballast1_high_level",
         "title": "Ballast tank 1 high level",
         "expected": "Level reaches at least 85% and alarm bit 3 latches.",
+    },
+    {
+        "id": "ballast1_auto_start",
+        "title": "High level auto-starts pump 1",
+        "expected": "With auto on, ballast at 85% or more starts pump 1 and latches alarm bit 3.",
     },
     {
         "id": "fire_zone_alarm_reset",
@@ -113,12 +121,19 @@ class Supervisor:
         self.discrete = [False] * DI_COUNT
         self.coils = [False] * 32
         self.view: dict[str, Any] = {}
+        self.samples: deque[dict[str, float]] = deque(maxlen=180)
+        self.events: deque[dict[str, str]] = deque(maxlen=8)
+        self._last_sample = 0.0
+        self._edges_ready = False
+        self._prev_alarm = 0
+        self._prev_demand = False
         self.reports = {
             item["id"]: {
                 **item,
                 "result": "not_run",
                 "response_time_ms": None,
                 "notes": "",
+                "completed_at": None,
             }
             for item in STEPS
         }
@@ -158,21 +173,29 @@ class Supervisor:
         self._ensure_idle()
         await self._write_coil(COIL_RESET, True)
 
-    async def set_commands(self, pump1_start: bool | None, pump2_start: bool | None) -> None:
+    async def set_commands(
+        self,
+        pump1_start: bool | None,
+        pump2_start: bool | None,
+        pump1_auto: bool | None = None,
+    ) -> None:
         self._ensure_idle()
-        async with self.lock:
-            await self._connect_unlocked()
-            current = await self.client.read_coils(0, 2, slave=1)
-            if current.isError():
-                raise StepError("Could not read pump command coils.")
-            values = [bool(current.bits[0]), bool(current.bits[1])]
-            if pump1_start is not None:
-                values[0] = pump1_start
-            if pump2_start is not None:
-                values[1] = pump2_start
-            wrote = await self.client.write_coils(0, values, slave=1)
-            if wrote.isError():
-                raise StepError("Could not write pump command coils.")
+        if pump1_start is not None or pump2_start is not None:
+            async with self.lock:
+                await self._connect_unlocked()
+                current = await self.client.read_coils(0, 2, slave=1)
+                if current.isError():
+                    raise StepError("Could not read pump command coils.")
+                values = [bool(current.bits[0]), bool(current.bits[1])]
+                if pump1_start is not None:
+                    values[0] = pump1_start
+                if pump2_start is not None:
+                    values[1] = pump2_start
+                wrote = await self.client.write_coils(0, values, slave=1)
+                if wrote.isError():
+                    raise StepError("Could not write pump command coils.")
+        if pump1_auto is not None:
+            await self._write_coil(COIL_PUMP1_AUTO, pump1_auto)
 
     async def inject(self, fault_id: str) -> None:
         self._ensure_idle()
@@ -192,6 +215,7 @@ class Supervisor:
                 "result": result,
                 "response_time_ms": response_ms,
                 "notes": notes,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
             }
         except StepError as exc:
             report = {
@@ -199,6 +223,7 @@ class Supervisor:
                 "result": "fail",
                 "response_time_ms": exc.response_time_ms,
                 "notes": exc.notes,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
             }
         except Exception as exc:
             log.exception("Step %s failed", step_id)
@@ -207,12 +232,40 @@ class Supervisor:
                 "result": "fail",
                 "response_time_ms": None,
                 "notes": str(exc),
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
             }
         finally:
             self.step_running = False
         self.reports[step_id] = report
+        self._push_event(f"Checklist {report['result'].upper()}: {spec['title']}")
         log.info("Step %s -> %s (%s)", step_id, report["result"], report["notes"])
         return report
+
+    def trends(self) -> list[dict[str, float]]:
+        return list(self.samples)
+
+    def report_text(self) -> str:
+        rows = self.steps()
+        passed = sum(1 for row in rows if row["result"] == "pass")
+        failed = sum(1 for row in rows if row["result"] == "fail")
+        lines = [
+            "Marine Auxiliary Commissioning Report",
+            "Training simulator. Not a ship installation.",
+            f"Generated: {datetime.now().isoformat(timespec='seconds')}",
+            f"Result: {passed} passed, {failed} failed, {len(rows) - passed - failed} not run",
+            "",
+        ]
+        for index, row in enumerate(rows, start=1):
+            response = "—" if row["response_time_ms"] is None else f"{row['response_time_ms']} ms"
+            lines.append(f"{index}. {row['title']}")
+            lines.append(f"   Expected: {row['expected']}")
+            lines.append(f"   Result: {row['result'].upper()}    Response: {response}")
+            if row.get("completed_at"):
+                lines.append(f"   Time: {row['completed_at']}")
+            if row.get("notes"):
+                lines.append(f"   Notes: {row['notes']}")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
 
     def tag_list(self) -> list[dict[str, Any]]:
         view = self.view
@@ -237,6 +290,8 @@ class Supervisor:
             ("main_power_ok", int(view.get("main_power_ok", False)), "", "10008"),
             ("emergency_power_ok", int(view.get("emergency_power_ok", False)), "", "10009"),
             ("pump1_start_cmd", int(pumps.get("pump1", {}).get("start_command", False)), "", "00001"),
+            ("pump1_auto", int(pumps.get("pump1", {}).get("auto", False)), "", "00005"),
+            ("pump1_auto_demand", int(pumps.get("pump1", {}).get("auto_demand", False)), "", "10010"),
             ("pump2_start_cmd", int(pumps.get("pump2", {}).get("start_command", False)), "", "00002"),
         ]
         return [
@@ -258,6 +313,8 @@ class Supervisor:
             return await self._step_fail_to_start()
         if step_id == "ballast1_high_level":
             return await self._step_ballast()
+        if step_id == "ballast1_auto_start":
+            return await self._step_auto_start()
         if step_id == "fire_zone_alarm_reset":
             return await self._step_fire()
         if step_id == "main_power_loss":
@@ -267,6 +324,7 @@ class Supervisor:
         raise KeyError(step_id)
 
     async def _baseline(self) -> None:
+        await self._write_coil(COIL_PUMP1_AUTO, False)
         await self._write_coil(COIL_PUMP1_START, False)
         await self._write_coil(COIL_PUMP2_START, False)
         await self._write_faults("none")
@@ -342,6 +400,31 @@ class Supervisor:
             raise StepError("Ballast tank 1 did not reach the high-level alarm.", elapsed)
         level = snap["tanks"][0]["level_percent"]
         return ("pass", elapsed, f"Level {level:.1f}% and alarm bit 3 latched in {elapsed} ms.")
+
+    async def _step_auto_start(self) -> tuple[str, int, str]:
+        await self._write_coil(COIL_PUMP1_AUTO, True)
+        t0 = time.monotonic()
+        await self._write_faults("ballast1_high")
+
+        def started(snap: dict[str, Any]) -> bool:
+            pump = snap["pumps"][0]
+            return (
+                pump["auto"]
+                and pump["auto_demand"]
+                and pump["running"]
+                and snap["tanks"][0]["level_percent"] >= 85
+                and bool(snap["alarm_word"] & (1 << 3))
+            )
+
+        snap = await self._wait(started, 3.0)
+        elapsed = int((time.monotonic() - t0) * 1000)
+        if snap is None:
+            raise StepError("Auto did not start pump 1 on high ballast.", elapsed)
+        return (
+            "pass",
+            elapsed,
+            f"Auto demand started pump 1 in {elapsed} ms while ballast stayed at {snap['tanks'][0]['level_percent']:.1f}%.",
+        )
 
     async def _step_fire(self) -> tuple[str, int, str]:
         t0 = time.monotonic()
@@ -596,6 +679,8 @@ class Supervisor:
                     "running": discrete[0],
                     "fault": discrete[1],
                     "start_command": coils[0] if coils else False,
+                    "auto": bool(coils[COIL_PUMP1_AUTO]) if len(coils) > COIL_PUMP1_AUTO else False,
+                    "auto_demand": discrete[9] if len(discrete) > 9 else False,
                 },
                 {
                     "id": "pump2",
@@ -622,5 +707,46 @@ class Supervisor:
                 "cooling_low_bar": tenths(THRESH_PRESSURE),
             },
             "step_running": self.step_running,
+            "events": list(self.events),
         }
+        self._note_plant_edges(alarm_word, bool(self.view["pumps"][0]["auto_demand"]))
+        self._note_sample()
         return self.view
+
+    def _push_event(self, text: str) -> None:
+        self.events.append({"time": datetime.now().strftime("%H:%M:%S"), "text": text})
+
+    def _note_plant_edges(self, alarm_word: int, auto_demand: bool) -> None:
+        if not self.connected:
+            return
+        if self._edges_ready:
+            new_bits = alarm_word & ~self._prev_alarm
+            cleared_bits = self._prev_alarm & ~alarm_word
+            for spec in ALARMS:
+                mask = 1 << spec["bit"]
+                if new_bits & mask:
+                    self._push_event(f"Alarm latched: {spec['name']}")
+                if cleared_bits & mask:
+                    self._push_event(f"Alarm reset: {spec['name']}")
+            if auto_demand and not self._prev_demand:
+                self._push_event("Pump 1 auto start: ballast reached 85%")
+            elif self._prev_demand and not auto_demand:
+                self._push_event("Pump 1 auto demand cleared")
+        self._prev_alarm = alarm_word
+        self._prev_demand = auto_demand
+        self._edges_ready = True
+
+    def _note_sample(self) -> None:
+        if not self.connected or len(self.registers) < 4:
+            return
+        now = time.monotonic()
+        if now - self._last_sample < 1:
+            return
+        self._last_sample = now
+        self.samples.append(
+            {
+                "ballast1": tenths(self.registers[0]),
+                "temp": tenths(self.registers[2]),
+                "pressure": tenths(self.registers[3]),
+            }
+        )

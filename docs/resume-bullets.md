@@ -5,9 +5,9 @@ Paste this under Personal Projects. It describes this repository only.
 **Marine Auxiliary Commissioning Trainer (PLC/SCADA)**
 Personal Project | 2026
 
-- Built a Modbus TCP plant simulator and a single-page SCADA view of a simplified vessel engine room: bilge pumps, ballast levels, fire zones, and power status.
-- Implemented alarm detection, acknowledgement, and reset, and measured alarm response time plus communication downtime.
-- Wrote a functional commissioning checklist: inject a known fault, confirm the expected alarm, and record pass or fail.
+- Built a Modbus TCP plant simulator and a single-page SCADA view of a simplified vessel engine room: bilge pumps, ballast levels, fire zones, power status, and a live trend.
+- Implemented alarm detection, acknowledgement, and reset, plus an automatic bilge start when ballast reaches 85%.
+- Wrote a functional commissioning checklist with a downloadable pass/fail report: inject a known fault, confirm the expected alarm, and record the response time.
 - Ran the PLC simulator and REST API as Docker services on a documented Modbus register map and fixed network ports.
 
 ## How to say it in an interview

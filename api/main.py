@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -42,6 +42,7 @@ class FaultIn(BaseModel):
 class CommandIn(BaseModel):
     pump1_start: bool | None = None
     pump2_start: bool | None = None
+    pump1_auto: bool | None = None
 
 
 def _call_error(exc: Exception) -> HTTPException:
@@ -127,10 +128,23 @@ async def inject_fault(body: FaultIn):
 @app.post("/api/commands")
 async def commands(body: CommandIn):
     try:
-        await supervisor.set_commands(body.pump1_start, body.pump2_start)
+        await supervisor.set_commands(body.pump1_start, body.pump2_start, body.pump1_auto)
     except (BusyError, StepError, ConnectionError) as exc:
         raise _call_error(exc) from exc
     return await supervisor.snapshot()
+
+
+@app.get("/api/trends")
+async def trends():
+    return supervisor.trends()
+
+
+@app.get("/api/commissioning/report")
+async def commissioning_report():
+    return PlainTextResponse(
+        supervisor.report_text(),
+        headers={"Content-Disposition": "attachment; filename=commissioning-report.txt"},
+    )
 
 
 @app.get("/api/commissioning/steps")

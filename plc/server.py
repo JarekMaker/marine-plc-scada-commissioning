@@ -15,6 +15,7 @@ from pymodbus.server import StartAsyncTcpServer
 from common.map import (
     ALARMS,
     COIL_ACK,
+    COIL_PUMP1_AUTO,
     COIL_RESET,
     DI_COUNT,
     HR_COUNT,
@@ -61,6 +62,8 @@ def read_coils(context: ModbusServerContext, count: int = 32) -> list[bool]:
 
 async def scan_loop(context: ModbusServerContext) -> None:
     plant = Plant()
+    # Auto is the normal mode: high ballast starts the pump without a manual command.
+    context[0].setValues(1, COIL_PUMP1_AUTO, [1])
     publish(context, plant)
     log.info("Initial image published. Heartbeat=%s", plant.heartbeat)
     while True:

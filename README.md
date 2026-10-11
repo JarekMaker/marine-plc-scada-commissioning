@@ -7,11 +7,14 @@ The PLC side is a Modbus TCP simulator. The SCADA page never reads the simulator
 ## What is on the screen
 
 - Bilge pumps, ballast tanks, engine-room temperature, cooling-water pressure, three fire zones, main power, and emergency power.
-- Latched alarms with acknowledge and reset.
-- A seven-step functional checklist. Each step injects one known condition and records pass or fail, plus the time until the expected result.
+- Pump 1 auto: the tank fills, the pump starts at 85%, and it stops at 40%. A trend shows level, temperature, and pressure.
+- Latched alarms with acknowledge, reset, and an event log.
+- An eight-step functional checklist. Each step injects one known condition and records pass or fail, plus the time until the expected result. Export report downloads that sheet.
 - Availability and downtime from a heartbeat watchdog. If holding register 40006 stops changing for 1.5 s, the link is counted down.
 
 The register map is in [plc/modbus_map.md](plc/modbus_map.md). The same checks are written out in [docs/commissioning-checklist.md](docs/commissioning-checklist.md). Resume wording is in [docs/resume-bullets.md](docs/resume-bullets.md).
+
+![Engine-room mimic with the commissioning checklist](docs/screenshot.png)
 
 ## Run on the laptop
 

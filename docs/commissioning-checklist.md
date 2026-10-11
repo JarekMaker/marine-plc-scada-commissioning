@@ -1,6 +1,6 @@
 # Functional commissioning checklist
 
-Run these from the SCADA page (**Commissioning checklist**) or with `POST /api/commissioning/steps/{id}/run`. Each step first clears injected faults, stops both pumps, and resets latched alarms. It then creates one condition and waits for the expected Modbus result. Response time is the time from the command until that result appears.
+Run these from the SCADA page (**Commissioning checklist**) or with `POST /api/commissioning/steps/{id}/run`. Each step first turns pump 1 auto off, clears injected faults, stops both pumps, and resets latched alarms. It then creates one condition and waits for the expected Modbus result. Response time is the time from the command until that result appears. **Export report** downloads the sheet.
 
 Pass and fail stay on the step after the run. A failed step does not change the wording of the others.
 
@@ -32,21 +32,28 @@ Pass and fail stay on the step after the run. A failed step does not change the 
 - Pass: register 40001 is at least 85.0% and alarm bit 3 is latched.
 - Evidence: level and response time. The high mark on the tank is 85%.
 
-## 5. Fire zone alarm and reset
+## 5. High level auto-starts pump 1
+
+- Id: `ballast1_auto_start`
+- Action: set coil 00005 (pump 1 auto), then set coil 00020.
+- Pass: discrete input 10010 (auto demand) and 10001 (running) are both 1, level stays at least 85%, and alarm bit 3 is latched.
+- Evidence: time from the high-level injection until the pump reports running. The injected level is held, so the pump does not pump the tank back down until the fault coil is cleared.
+
+## 6. Fire zone alarm and reset
 
 - Id: `fire_zone_alarm_reset`
 - Action: set coil 00024 (fire zone 1). After the alarm latches, clear that coil, then pulse coil 00004 (reset).
 - Pass: discrete input 10005 follows the sensor. Alarm bit 7 stays latched after the sensor returns to normal, and reset drops it only then.
 - Evidence: response time plus the latch-and-reset sequence. This is the difference between a live sensor and a latched alarm.
 
-## 6. Main power loss
+## 7. Main power loss
 
 - Id: `main_power_loss`
 - Action: set coil 00027.
 - Pass: discrete input 10008 is 0, discrete input 10009 (emergency power) stays 1, and alarm bit 10 is latched.
 - Evidence: both power inputs and the alarm bit.
 
-## 7. Communication loss and recovery
+## 8. Communication loss and recovery
 
 - Id: `comms_loss_recovery`
 - Action: set coil 00028 to freeze register 40006. The TCP session stays up. Clear the coil after the watchdog trips.

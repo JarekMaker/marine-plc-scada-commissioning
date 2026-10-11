@@ -14,6 +14,7 @@ COIL_PUMP1_START = 0
 COIL_PUMP2_START = 1
 COIL_ACK = 2
 COIL_RESET = 3
+COIL_PUMP1_AUTO = 4
 COIL_INJECT_PUMP1_FAIL = 16
 COIL_INJECT_PUMP1_OVERLOAD = 17
 COIL_INJECT_PUMP2_FAULT = 18
@@ -40,7 +41,8 @@ DI_FIRE_2 = 5
 DI_FIRE_3 = 6
 DI_MAIN_POWER_OK = 7
 DI_EMERGENCY_POWER_OK = 8
-DI_COUNT = 9
+DI_PUMP1_AUTO_DEMAND = 9
+DI_COUNT = 10
 
 # Holding registers, function 03. Analog values are in tenths.
 HR_BALLAST1 = 0
@@ -69,6 +71,12 @@ NORMAL_PRESSURE = 45
 FAULT_BALLAST = 920
 FAULT_TEMP = 820
 FAULT_PRESSURE = 12
+
+# Tenths of a percent, applied once per 250 ms scan.
+BALLAST_STOP = 400
+INGRESS_PER_SCAN = 6
+PUMPDOWN_PER_SCAN = 16
+STANDBY_PER_SCAN = 24
 
 ALARMS = [
     {"bit": 0, "id": "pump1_fail_to_start", "name": "Bilge pump 1 fail to start", "priority": "high"},

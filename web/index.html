@@ -95,7 +95,9 @@
         <div>
           <h3>Bilge pump 1</h3>
           <p id="pump1-state">—</p>
+          <p class="hint">Auto starts at 85% and stops at 40%</p>
         </div>
+        <button type="button" id="pump1-auto">Auto off</button>
         <button type="button" id="pump1-cmd">Start</button>
       </article>
       <article class="pump" id="pump2-card">
@@ -125,6 +127,14 @@
         <p>—</p>
       </article>
     </div>
+    <div class="trend-wrap">
+      <div class="trend-legend">
+        <span class="swatch ballast">Ballast 1</span>
+        <span class="swatch temp">Engine room</span>
+        <span class="swatch pressure">Cooling water</span>
+      </div>
+      <svg id="trend" viewBox="0 0 640 140" role="img" aria-label="Trend of ballast level, temperature, and cooling pressure"></svg>
+    </div>
   </section>
 
   <div class="split">
@@ -139,6 +149,10 @@
       <ul id="alarm-list" class="alarm-list">
         <li class="empty">No active alarms</li>
       </ul>
+      <h3 class="event-title">Event log</h3>
+      <ul id="event-list" class="event-list">
+        <li class="empty">No events yet</li>
+      </ul>
       <form id="fault-form" class="fault-form">
         <label for="fault">Inject a known fault</label>
         <div class="fault-row">
@@ -152,7 +166,10 @@
     <section class="panel" aria-labelledby="check-title">
       <div class="panel-head">
         <h2 id="check-title">Commissioning checklist</h2>
-        <button type="button" id="run-all">Run all</button>
+        <div class="actions">
+          <button type="button" id="export-report">Export report</button>
+          <button type="button" id="run-all">Run all</button>
+        </div>
       </div>
       <p class="hint lone">Each step returns the plant to normal, injects one condition, and records pass or fail.</p>
       <ol id="steps" class="steps"></ol>

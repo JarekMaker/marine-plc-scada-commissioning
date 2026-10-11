@@ -12,6 +12,7 @@ The PLC scan is 250 ms. Alarm bits latch. Acknowledge marks them; reset drops a 
 - `1` (00002) — bilge pump 2 start command
 - `2` (00003) — alarm acknowledge, all latched alarms
 - `3` (00004) — alarm reset, latched alarms whose condition is clear
+- `4` (00005) — bilge pump 1 auto. High ballast starts the pump; it stops again at 40%
 - `16` (00017) — inject bilge pump 1 fail to start
 - `17` (00018) — inject bilge pump 1 overload
 - `18` (00019) — inject bilge pump 2 fault
@@ -25,7 +26,7 @@ The PLC scan is 250 ms. Alarm bits latch. Acknowledge marks them; reset drops a 
 - `26` (00027) — inject main power loss
 - `27` (00028) — freeze the heartbeat counter
 
-Fail to start raises an alarm only while the pump start command is on. The pump does not report running feedback in that case. Heartbeat freeze keeps the TCP session up but stops register `5` from incrementing, so the SCADA watchdog can time out.
+Fail to start raises an alarm while a run request is present, either from the start coil or from auto demand. The pump does not report running feedback in that case. Main power loss also drops the run request. Heartbeat freeze keeps the TCP session up but stops register `5` from incrementing, so the SCADA watchdog can time out.
 
 ## Discrete inputs (FC 02)
 
@@ -38,6 +39,7 @@ Fail to start raises an alarm only while the pump start command is on. The pump 
 - `6` (10007) — fire zone 3 sensor
 - `7` (10008) — main power healthy
 - `8` (10009) — emergency power healthy
+- `9` (10010) — bilge pump 1 auto demand
 
 Fire sensors follow the injected condition. The alarm bit can stay latched after the sensor returns to normal. Emergency power stays healthy in this model when main power is lost.
 

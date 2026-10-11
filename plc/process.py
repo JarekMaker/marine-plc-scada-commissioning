@@ -2,7 +2,11 @@
 
 This is not a class-approved marine automation system. Alarm bits stay
 latched after the field condition clears until a reset command arrives.
+With pump 1 in auto, a high ballast level starts the pump and a low level
+stops it. Loss of main power removes the run request.
 """
+
+import math
 
 from common.map import (
     ALARM_MASK,
@@ -19,10 +23,15 @@ from common.map import (
     COIL_INJECT_PUMP1_FAIL,
     COIL_INJECT_PUMP1_OVERLOAD,
     COIL_INJECT_PUMP2_FAULT,
+    BALLAST_STOP,
+    COIL_PUMP1_AUTO,
     COIL_PUMP1_START,
     COIL_PUMP2_START,
     COIL_RESET,
     FAULT_BALLAST,
+    INGRESS_PER_SCAN,
+    PUMPDOWN_PER_SCAN,
+    STANDBY_PER_SCAN,
     FAULT_PRESSURE,
     FAULT_TEMP,
     NORMAL_BALLAST_1,
@@ -48,6 +57,7 @@ class Plant:
         self.pump2_running = False
         self.pump1_fault = False
         self.pump2_fault = False
+        self.auto_demand = False
         self.fire = [False, False, False]
         self.main_power_ok = True
         self.emergency_power_ok = True
@@ -55,6 +65,11 @@ class Plant:
         self.clear_reset = False
         self.newly_latched = 0
         self.newly_cleared = 0
+        self._auto_latched = False
+        self._ballast_forced = False
+        self._temp_hold = False
+        self._pressure_forced = False
+        self._tick = 0
 
     def scan(self, coils: list[bool]) -> None:
         def commanded(address: int) -> bool:
@@ -62,6 +77,7 @@ class Plant:
 
         start1 = commanded(COIL_PUMP1_START)
         start2 = commanded(COIL_PUMP2_START)
+        auto = commanded(COIL_PUMP1_AUTO)
         fail1 = commanded(COIL_INJECT_PUMP1_FAIL)
         overload1 = commanded(COIL_INJECT_PUMP1_OVERLOAD)
         fault2 = commanded(COIL_INJECT_PUMP2_FAULT)
@@ -76,23 +92,28 @@ class Plant:
         ]
         power_loss = commanded(COIL_INJECT_MAIN_POWER_LOSS)
         freeze = commanded(COIL_HEARTBEAT_FREEZE)
-
-        # Fail-to-start and overload both remove running feedback.
-        self.pump1_running = start1 and not fail1 and not overload1
-        self.pump1_fault = (start1 and fail1) or overload1
-        self.pump2_running = start2 and not fault2
-        self.pump2_fault = fault2
-
-        self.ballast1 = FAULT_BALLAST if high1 else NORMAL_BALLAST_1
-        self.ballast2 = FAULT_BALLAST if high2 else NORMAL_BALLAST_2
-        self.temp = FAULT_TEMP if hot else NORMAL_TEMP
-        self.pressure = FAULT_PRESSURE if low_pressure else NORMAL_PRESSURE
+        self._tick += 1
         self.fire = fire
         self.main_power_ok = not power_loss
         self.emergency_power_ok = True
 
+        self._move_ballast(high1, high2, auto)
+        if not auto or self.ballast1 <= BALLAST_STOP:
+            self._auto_latched = False
+        elif self.ballast1 >= THRESH_BALLAST:
+            self._auto_latched = True
+        self.auto_demand = auto and self._auto_latched
+        run_request = (start1 or self.auto_demand) and self.main_power_ok
+
+        # Fail-to-start and overload both remove running feedback.
+        self.pump1_running = run_request and not fail1 and not overload1
+        self.pump1_fault = (run_request and fail1) or overload1
+        self.pump2_running = start2 and not fault2 and self.main_power_ok
+        self.pump2_fault = fault2
+        self._move_climate(hot, low_pressure)
+
         conditions = 0
-        if start1 and fail1:
+        if run_request and fail1:
             conditions |= 1 << 0
         if overload1:
             conditions |= 1 << 1
@@ -149,7 +170,52 @@ class Plant:
             int(self.fire[2]),
             int(self.main_power_ok),
             int(self.emergency_power_ok),
+            int(self.auto_demand),
         ]
+
+    def _move_ballast(self, high1: bool, high2: bool, auto: bool) -> None:
+        if high1:
+            self.ballast1 = FAULT_BALLAST
+            self._ballast_forced = True
+        elif self._ballast_forced:
+            self.ballast1 = BALLAST_STOP
+            self._ballast_forced = False
+        elif self.pump1_running:
+            self.ballast1 = max(300, self.ballast1 - PUMPDOWN_PER_SCAN)
+        elif auto:
+            self.ballast1 = min(1000, self.ballast1 + INGRESS_PER_SCAN)
+        elif self.ballast1 > BALLAST_STOP:
+            self.ballast1 = max(BALLAST_STOP, self.ballast1 - STANDBY_PER_SCAN)
+        elif self.ballast1 < BALLAST_STOP:
+            self.ballast1 = min(BALLAST_STOP, self.ballast1 + INGRESS_PER_SCAN)
+
+        if high2:
+            self.ballast2 = FAULT_BALLAST
+        else:
+            wave = int(12 * math.sin(self._tick / 20))
+            self.ballast2 = NORMAL_BALLAST_2 + wave
+
+    def _move_climate(self, hot: bool, low_pressure: bool) -> None:
+        if hot:
+            self.temp = FAULT_TEMP
+            self._temp_hold = True
+        elif low_pressure:
+            self.temp = min(FAULT_TEMP, self.temp + 3)
+            self._temp_hold = True
+        elif self._temp_hold:
+            self.temp = NORMAL_TEMP
+            self._temp_hold = False
+        else:
+            self.temp = NORMAL_TEMP + int(8 * math.sin(self._tick / 16))
+
+        if low_pressure:
+            self.pressure = FAULT_PRESSURE
+            self._pressure_forced = True
+        elif self._pressure_forced:
+            self.pressure = NORMAL_PRESSURE
+            self._pressure_forced = False
+        else:
+            self.pressure = NORMAL_PRESSURE + int(2 * math.sin(self._tick / 18))
 
     def holding_registers(self) -> list[int]:
         return [

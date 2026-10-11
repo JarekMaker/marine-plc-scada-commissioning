@@ -45,12 +45,20 @@ function renderPump(prefix, pump) {
   const button = document.querySelector(`#${prefix}-cmd`);
   const mode = pump.fault ? "fault" : pump.running ? "on" : "idle";
   lamp(card.querySelector(".lamp"), mode);
-  if (pump.fault && pump.start_command && !pump.running) state.textContent = "Fault — no running feedback";
+  const commanded = pump.start_command || pump.auto_demand;
+  if (pump.fault && commanded && !pump.running) state.textContent = "Fault — no running feedback";
   else if (pump.fault) state.textContent = "Fault";
+  else if (pump.running && pump.auto_demand) state.textContent = "Running on auto";
   else if (pump.running) state.textContent = "Running";
+  else if (pump.auto) state.textContent = "Auto — stopped";
   else state.textContent = "Stopped";
   button.textContent = pump.start_command ? "Stop" : "Start";
   button.dataset.start = pump.start_command ? "0" : "1";
+  const autoButton = document.querySelector("#pump1-auto");
+  if (prefix === "pump1" && autoButton) {
+    autoButton.textContent = pump.auto ? "Auto on" : "Auto off";
+    autoButton.dataset.auto = pump.auto ? "1" : "0";
+  }
 }
 
 function renderSnapshot(snap) {
@@ -89,6 +97,12 @@ function renderSnapshot(snap) {
   document.querySelector("#fault-chips").textContent = chips.length
     ? `Injected: ${chips.map((item) => item.label).join(", ")}`
     : "";
+  const events = document.querySelector("#event-list");
+  if (!snap.events || !snap.events.length) {
+    events.innerHTML = '<li class="empty">No events yet</li>';
+  } else {
+    events.innerHTML = snap.events.map((event) => `<li><time>${event.time}</time>${event.text}</li>`).join("");
+  }
   if (!snap.connected) return;
 
   const tanks = snap.tanks || [];
@@ -193,6 +207,39 @@ async function poll() {
   }
 }
 
+function drawTrend(samples) {
+  const svg = document.querySelector("#trend");
+  if (!samples.length) {
+    svg.innerHTML = "";
+    return;
+  }
+  const width = 640;
+  const height = 140;
+  const series = [
+    { key: "ballast1", color: "#6fd0e6", min: 0, max: 100 },
+    { key: "temp", color: "#f0b429", min: 30, max: 90 },
+    { key: "pressure", color: "#3ecf8e", min: 0, max: 8 },
+  ];
+  const step = samples.length === 1 ? 0 : width / (samples.length - 1);
+  const lines = series.map((item) => {
+    const points = samples.map((sample, index) => {
+      const ratio = (sample[item.key] - item.min) / (item.max - item.min);
+      const y = height - 8 - Math.max(0, Math.min(1, ratio)) * (height - 16);
+      return `${(index * step).toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    return `<polyline fill="none" stroke="${item.color}" stroke-width="2" points="${points}" />`;
+  }).join("");
+  svg.innerHTML = lines;
+}
+
+async function pollTrends() {
+  try {
+    drawTrend(await request("/api/trends"));
+  } catch (_error) {
+    // The snapshot poll already reports a lost link.
+  }
+}
+
 document.querySelector("#pump1-cmd").addEventListener("click", async () => {
   const start = document.querySelector("#pump1-cmd").dataset.start !== "0";
   try {
@@ -231,6 +278,31 @@ document.querySelector("#fault-form").addEventListener("submit", async (event) =
   }
 });
 
+document.querySelector("#pump1-auto").addEventListener("click", async () => {
+  const turnOn = document.querySelector("#pump1-auto").dataset.auto !== "1";
+  try {
+    setMessage("");
+    await post("/api/commands", { pump1_auto: turnOn });
+  } catch (error) {
+    setMessage(error.message);
+  }
+});
+
+document.querySelector("#export-report").addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/commissioning/report");
+    if (!response.ok) throw new Error("Could not build the commissioning report");
+    const blob = await response.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "commissioning-report.txt";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    setMessage(error.message);
+  }
+});
+
 document.querySelector("#run-all").addEventListener("click", () => {
   runAll().catch((error) => setMessage(error.message));
 });
@@ -246,7 +318,9 @@ async function init() {
   }`;
   buildSteps(steps);
   await poll();
+  await pollTrends();
   setInterval(() => { poll(); }, 500);
+  setInterval(() => { pollTrends(); }, 1000);
 }
 
 init().catch((error) => setMessage(error.message));
